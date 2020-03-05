@@ -1,30 +1,24 @@
 package controllers
 
-import java.io.FileInputStream
+import java.io.{File, FileInputStream}
 
 import javax.inject._
+import models.SelectiveRequest
 import play.api.libs.json._
-
 import play.api.mvc._
-
-import scala.collection.JavaConverters._
-
 
 @Singleton
 class DataController @Inject() (val controllerComponents: ControllerComponents)
     extends BaseController {
 
-  import java.io.File
-  def recursiveListFiles(f: File): Array[File] = {
+  def recursiveListFiles(f: File): Seq[File] = {
     val these = f.listFiles
-    these ++ these.filter(_.isDirectory).flatMap(recursiveListFiles)
+    these ++ these.filter(_.isDirectory).flatMap(recursiveListFiles _)
   }
 
-  def all() = Action { implicit request: Request[AnyContent] =>
-    {
-      var result: JsArray = Json.arr()
-      for (file <- recursiveListFiles(new java.io.File("./output/"))
-           if file.getName.endsWith(".json")) {
+  def all(): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    val r = recursiveListFiles(new java.io.File("./output/")).flatMap { file =>
+      if (file.getName.endsWith(".json")) {
         val stream = new FileInputStream(file)
         val json =
           try {
@@ -32,31 +26,45 @@ class DataController @Inject() (val controllerComponents: ControllerComponents)
           } finally {
             stream.close()
           }
-        result = result.append(json)
+        Some(json)
+      } else {
+        None
       }
-      Ok(result)
     }
+
+    Ok(r)
   }
 
-  def selective() = Action { implicit request: Request[AnyContent] =>
-    {
-      val json = request.body.asJson
-      val page_url = json.get("page_url")
-      val inbound_links = json.get("inbound_links")
-      var result: JsArray = Json.arr()
-      for (file <- recursiveListFiles(new java.io.File("./output/"))
-           if file.getName.endsWith(".json")) {
-        val stream = new FileInputStream(file)
-        val json =
-          try {
-            Json.parse(stream)
-          } finally {
-            stream.close()
+  def selective(): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
+    request.body.asJson
+      .map { json =>
+        json
+          .asOpt[SelectiveRequest]
+          .map { r =>
+            val res = recursiveListFiles(new java.io.File("./output/")).flatMap { file =>
+              file.getName match {
+                case json if json.endsWith(".json") =>
+                  val stream = new FileInputStream(file)
+                  val json =
+                    try {
+                      Json.parse(stream)
+                    } finally {
+                      stream.close()
+                    }
+
+                  if ((json \ "page_url").as[String] == r.pageUrl && (json \ "inbound_links")
+                        .as[Int] == r.inboundLinks)
+                    Some(json)
+                  else
+                    None
+                case _ => None
+              }
+            }
+
+            Ok(res)
           }
-        if ((json \ "page_url").get == page_url && (json \ "inbound_links").get == inbound_links)
-          result = result.append(json)
+          .getOrElse(BadRequest("Some key in the JSON object was invalid."))
       }
-      Ok(result)
-    }
+      .getOrElse(BadRequest("The request was not valid."))
   }
 }
