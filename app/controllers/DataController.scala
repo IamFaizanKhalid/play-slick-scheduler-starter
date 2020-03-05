@@ -17,8 +17,9 @@ class DataController @Inject() (val controllerComponents: ControllerComponents)
   }
 
   def all(): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
-    val r = recursiveListFiles(new java.io.File("./output/")).flatMap { file =>
-      if (file.getName.endsWith(".json")) {
+    val res = recursiveListFiles(new java.io.File("./output/")).flatMap { file =>
+    file.getName match {
+      case json if json.endsWith(".json") =>
         val stream = new FileInputStream(file)
         val json =
           try {
@@ -27,12 +28,11 @@ class DataController @Inject() (val controllerComponents: ControllerComponents)
             stream.close()
           }
         Some(json)
-      } else {
-        None
+      case _ => None
       }
     }
 
-    Ok(r)
+    Ok(JsArray(res))
   }
 
   def selective(): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
@@ -61,7 +61,7 @@ class DataController @Inject() (val controllerComponents: ControllerComponents)
               }
             }
 
-            Ok(res)
+            Ok(JsArray(res))
           }
           .getOrElse(BadRequest("Some key in the JSON object was invalid."))
       }
