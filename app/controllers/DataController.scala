@@ -11,11 +11,13 @@ import play.api.mvc._
 class DataController @Inject() (val controllerComponents: ControllerComponents)
     extends BaseController {
 
+  // Gets all files recursively from the given directory
   def recursiveListFiles(f: File): Seq[File] = {
     val these = f.listFiles
     these ++ these.filter(_.isDirectory).flatMap(recursiveListFiles _)
   }
 
+  // Returns all crawling data
   def all(): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
     val res = recursiveListFiles(new java.io.File("./output/")).flatMap { file =>
     file.getName match {
@@ -35,6 +37,7 @@ class DataController @Inject() (val controllerComponents: ControllerComponents)
     Ok(JsArray(res))
   }
 
+  // Returns crawling data filtered by page_url and inbound_links
   def selective(): Action[AnyContent] = Action { implicit request: Request[AnyContent] =>
     request.body.asJson
       .map { json =>
